@@ -2,29 +2,8 @@
 
 ---@alias AimTarget { entity : Entity, pos : Vector3, angles : EulerAngles, factor : number }
 
----@type boolean, lnxLib
-local libLoaded, lnxLib = pcall(require, "lnxLib")
-assert(libLoaded, "lnxLib not found, please install it!")
---assert(lnxLib.GetVersion() >= 0.967, "LNXlib version is too old, please update it!")
-
-local menuLoaded, MenuLib = pcall(require, "Menu")                               -- Load MenuLib
-assert(menuLoaded, "MenuLib not found, please install it!")                      -- If not found, throw error
-assert(MenuLib.Version >= 1.44, "MenuLib version is too old, please update it!") -- If version is too old, throw error
-
---[[ Menu ]]
-local menu         = MenuLib.Create("Trajectories", MenuFlags.AutoSize)
-menu.Style.TitleBg = { 125, 155, 255, 255 }
-menu.Style.Outline = true
-
-
-menu:AddComponent(MenuLib.Label("                   [ Draw ]", ItemFlags.FullWidth))
-
-local mEnagle        = menu:AddComponent(MenuLib.Checkbox("Enable", true))
-
-
 ---@param pLocal WPlayer
----@---@param userCmd UserCmd
----@
+---@param userCmd UserCmd
 local GRAVITY = 800 -- gravity in units/s^2
 local FIXED_VELOCITY = 1300 -- fixed initial velocity in Hammer units
 
@@ -60,58 +39,67 @@ function CalculateProjectilePath(startPos, endPos, velocity)
     end
     
     return path
-  end
-  
-  
+end
 
 local function OnCreateMove(pCmd)
     --
 end
 
-
 local myfont = draw.CreateFont("Verdana", 16, 800) -- Create a font for doDraw
 local function doDraw()
-
     local me = entities.GetLocalPlayer()
     if not me then return end
 
     if engine.Con_IsVisible() or engine.IsGameUIVisible() then
         return
     end
-        draw.SetFont( myfont )
-        draw.Color( 255, 255, 255, 255 )
-        local w, h = draw.GetScreenSize()
-        local screenPos = { w / 2 - 15, h / 2 + 35}
 
+    draw.SetFont(myfont)
+    draw.Color(255, 255, 255, 255)
+    local w, h = draw.GetScreenSize()
+    local screenPos = { w / 2 - 15, h / 2 + 35}
 
-          
-        me = entities.GetLocalPlayer();
-        local source = me:GetAbsOrigin() + me:GetPropVector( "localdata", "m_vecViewOffset[0]" );
-        local destination = source + engine.GetViewAngles():Forward() * 1000;
-        source = source + engine.GetViewAngles():Forward() * 10;
-        local trace = engine.TraceLine( source, destination, MASK_SHOT_HULL );
+    -- Get source and destination points
+    local source = me:GetAbsOrigin() + me:GetPropVector("localdata", "m_vecViewOffset[0]")
+    local destination = source + engine.GetViewAngles():Forward() * 1000
+    source = source + engine.GetViewAngles():Forward() * 10
 
-        if (trace.entity == nil) then return end
-        
+    -- Trace line to get end position
+    local trace = engine.TraceLine(source, destination, MASK_SHOT_HULL)
+    if not trace then return end
 
-          local startPos = source + Vector3(-20, -20, -20)
-          local endPos = trace.endpos
-          
-        local path = CalculateProjectilePath(source, endPos, FIXED_VELOCITY)
-        if path == nil then return end
-   -- draw predicted enemy position with strafe prediction connecting his local point and predicted position with line.
-   for i, point in ipairs(path) do
-    local startScreenPos = client.WorldToScreen(path[i])
-    local endScreenPos = client.WorldToScreen(path[i+1])
-    if startScreenPos ~= nil and endScreenPos ~= nil then
-      draw.Line(startScreenPos[1], startScreenPos[2], endScreenPos[1], endScreenPos[2])
+    local startPos = source + Vector3(-20, -20, -20)
+    local endPos = trace.endpos
+
+    -- Calculate and draw projectile path
+    local path = CalculateProjectilePath(startPos, endPos, FIXED_VELOCITY)
+    if not path then return end
+
+    for i, point in ipairs(path) do
+        local startScreenPos = client.WorldToScreen(path[i])
+        local endScreenPos = client.WorldToScreen(path[i+1])
+
+        if startScreenPos and endScreenPos then
+            draw.Line(startScreenPos[1], startScreenPos[2], endScreenPos[1], endScreenPos[2])
+        end
     end
-  end
-  
-  
 
+    -- Debug draw for testing
+    local vStart = entities.GetLocalPlayer():GetShootPos()
+    local vForward = entities.GetLocalPlayer():GetPropVector("localdata", "m_vecViewOffset[0]")
+    local vEnd = vStart + vForward * 10000
+    local tr = engine.TraceLine({ start = vStart, endpos = vEnd, filter = entities.GetLocalPlayer() })
+    local vTargetPos = tr.HitPos
+    local vDistance = vTargetPos - vStart
+    local fTimeInAir = math.sqrt((vDistance.x * vDistance.x + vDistance.y * vDistance.y) / (500 * 500))
+    local vVelocity = vDistance / fTimeInAir - Vector(0, 0, 0.5 * 800 * fTimeInAir)
+    local vLastPos = vStart
 
-          
+    for i = 0, fTimeInAir, 0.01 do
+        local vNewPos = vStart + vVelocity * i + Vector(0, 0, 0.5 * -600 * i * i + 800 * i * 0.01)
+        debugoverlay.Line(vLastPos, vNewPos, 0.01, Color(0, 255, 0, 255), true)
+        vLastPos = vNewPos
+    end
 end
 
 --[[ Remove the menu when unloaded ]]--
